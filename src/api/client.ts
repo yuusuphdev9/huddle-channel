@@ -1,10 +1,10 @@
 // ====================================================
 // Huddle API Client
-// Base URL: http://localhost:3000/api
+// Base URL: configured via VITE_API_BASE_URL env var
 // Contract: Huddle API Endpoint_Contract.docx
 // ====================================================
 
-const BASE_URL = 'http://localhost:3000/api';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'https://huddle-backend-fdnr.onrender.com/api';
 
 function getToken(): string | null {
   return localStorage.getItem('huddle_token');
