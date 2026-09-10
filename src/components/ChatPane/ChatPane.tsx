@@ -11,9 +11,11 @@ interface Props {
   status: ChannelStatus;
   onSend: (text: string) => void;
   onRetry: () => void;
+  onBack?: () => void;
+  hidden?: boolean;
 }
 
-const ChatPane: React.FC<Props> = ({ channel, status, onSend, onRetry }) => {
+const ChatPane: React.FC<Props> = ({ channel, status, onSend, onRetry, onBack, hidden }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,8 +39,8 @@ const ChatPane: React.FC<Props> = ({ channel, status, onSend, onRetry }) => {
   };
 
   return (
-    <div className={styles.pane}>
-      <ChannelHeader channel={channel} />
+    <div className={`${styles.pane}${hidden ? ` ${styles.hidden}` : ''}`}>
+      <ChannelHeader channel={channel} onBack={onBack} />
       <div className={styles.body}>{renderBody()}</div>
       <MessageComposer channelName={channel.name} onSend={onSend} />
     </div>
@@ -46,3 +48,4 @@ const ChatPane: React.FC<Props> = ({ channel, status, onSend, onRetry }) => {
 };
 
 export default ChatPane;
+

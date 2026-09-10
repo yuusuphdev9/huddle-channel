@@ -8,6 +8,7 @@ interface Props {
   directMessages: Channel[];
   activeChannelId: string;
   onSelectChannel: (id: string) => void;
+  hidden?: boolean;
 }
 
 const HashIcon = () => (
@@ -42,11 +43,12 @@ const Sidebar: React.FC<Props> = ({
   directMessages,
   activeChannelId,
   onSelectChannel,
+  hidden,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <aside className={styles.sidebar}>
+    <aside className={`${styles.sidebar}${hidden ? ` ${styles.hidden}` : ''}`}>
       {/* Workspace name */}
       <div className={styles.wsName} onClick={() => setMenuOpen(o => !o)}>
         <span>{workspace.name}</span>

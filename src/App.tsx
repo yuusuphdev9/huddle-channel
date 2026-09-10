@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AppState, Channel, ChannelStatus, avatarColorFor, initialsFrom, formatTimestamp } from './types';
 import { WORKSPACE, MOCK_CHANNELS, MOCK_DMS } from './data/mockData';
 import { getChannels, getMessages, sendMessage } from './api/client';
@@ -16,6 +16,7 @@ const App: React.FC = () => {
     channelStatus: 'loaded',
   });
   const [channelStatus, setChannelStatus] = useState<ChannelStatus>('loaded');
+  const [mobileView, setMobileView] = useState<'sidebar' | 'chat'>('sidebar');
 
   const allChannels: Channel[] = [...appState.channels, ...appState.directMessages];
   const activeChannel = allChannels.find(c => c.id === appState.activeChannelId) ?? allChannels[0];
@@ -81,6 +82,7 @@ const App: React.FC = () => {
   // Select channel
   const handleSelectChannel = (id: string) => {
     setAppState(prev => ({ ...prev, activeChannelId: id }));
+    setMobileView('chat');
   };
 
   // Send message
@@ -148,12 +150,15 @@ const App: React.FC = () => {
           directMessages={appState.directMessages}
           activeChannelId={appState.activeChannelId}
           onSelectChannel={handleSelectChannel}
+          hidden={mobileView === 'chat'}
         />
         <ChatPane
           channel={activeChannel}
           status={channelStatus}
           onSend={handleSend}
           onRetry={handleRetry}
+          onBack={() => setMobileView('sidebar')}
+          hidden={mobileView === 'sidebar'}
         />
       </div>
     </div>

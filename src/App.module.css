@@ -12,6 +12,13 @@
   overflow: hidden;
 }
 
+/* ===== MOBILE ===== */
+@media (max-width: 768px) {
+  .shell {
+    position: relative;
+  }
+}
+
 /* ===== DEV STATE BAR ===== */
 .devBar {
   display: flex;

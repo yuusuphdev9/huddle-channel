@@ -5,6 +5,7 @@ import styles from './ChannelHeader.module.css';
 interface Props {
   channel: Channel;
   onInvite?: () => void;
+  onBack?: () => void;
 }
 
 const HashIcon: React.FC = () => (
@@ -23,11 +24,21 @@ const PeopleIcon: React.FC = () => (
   </svg>
 );
 
-const ChannelHeader: React.FC<Props> = ({ channel, onInvite }) => {
+const BackIcon: React.FC = () => (
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+    <path d="M11 4L6 9L11 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const ChannelHeader: React.FC<Props> = ({ channel, onInvite, onBack }) => {
   const isChannel = channel.type === 'channel';
 
   return (
     <div className={styles.header}>
+      <button className={styles.backBtn} onClick={onBack} aria-label="Back to channels">
+        <BackIcon />
+        Channels
+      </button>
       <div className={styles.info}>
         <div className={styles.name}>
           {isChannel && <HashIcon />}
@@ -48,3 +59,4 @@ const ChannelHeader: React.FC<Props> = ({ channel, onInvite }) => {
 };
 
 export default ChannelHeader;
+

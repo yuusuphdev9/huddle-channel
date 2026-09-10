@@ -54,3 +54,33 @@
   color: var(--brand-600);
   background: var(--brand-100);
 }
+
+/* ===== MOBILE ===== */
+.backBtn {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .backBtn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    border: none;
+    background: transparent;
+    color: var(--brand-600);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+  }
+
+  .backBtn:hover {
+    background: var(--bg-sunken);
+  }
+
+  .inviteBtn {
+    display: none;
+  }
+}

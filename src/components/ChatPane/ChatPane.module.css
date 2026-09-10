@@ -21,3 +21,18 @@
   flex-direction: column;
   gap: 2px;
 }
+
+/* ===== MOBILE ===== */
+@media (max-width: 768px) {
+  .pane {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    transition: transform 0.25s ease;
+  }
+
+  .pane.hidden {
+    transform: translateX(100%);
+    pointer-events: none;
+  }
+}

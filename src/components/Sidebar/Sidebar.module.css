@@ -167,3 +167,19 @@
   background: var(--success);
   border-color: var(--brand-100);
 }
+
+/* ===== MOBILE ===== */
+@media (max-width: 768px) {
+  .sidebar {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    z-index: 10;
+    transition: transform 0.25s ease;
+  }
+
+  .sidebar.hidden {
+    transform: translateX(-100%);
+    pointer-events: none;
+  }
+}
