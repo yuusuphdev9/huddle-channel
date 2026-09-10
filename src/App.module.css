@@ -13,11 +13,7 @@
 }
 
 /* ===== MOBILE ===== */
-@media (max-width: 768px) {
-  .shell {
-    position: relative;
-  }
-}
+/* Shell stays as a flex row — panels show/hide via display:none */
 
 /* ===== DEV STATE BAR ===== */
 .devBar {
