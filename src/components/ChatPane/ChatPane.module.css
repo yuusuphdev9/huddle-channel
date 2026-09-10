@@ -31,4 +31,8 @@
   .pane.hidden {
     display: none;
   }
+
+  .messages {
+    padding: 8px 0;
+  }
 }

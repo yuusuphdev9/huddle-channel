@@ -173,6 +173,47 @@
   .sidebar {
     width: 100%;
     flex-shrink: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .wsName {
+    padding: 16px 16px 12px;
+    font-size: 16px;
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--brand-700);
+    color: #fff;
+    border-radius: 0;
+  }
+
+  .wsName svg {
+    opacity: 0.7;
+    filter: brightness(10);
+  }
+
+  .wsMenu {
+    margin: 0;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+
+  .groupLabel {
+    margin: 12px 0 4px;
+    padding: 0 16px;
+  }
+
+  .list {
+    padding: 0 8px;
+  }
+
+  .navItem {
+    padding: 10px 12px;
+    font-size: 14px;
   }
 
   .sidebar.hidden {

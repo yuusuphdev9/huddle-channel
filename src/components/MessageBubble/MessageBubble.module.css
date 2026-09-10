@@ -54,4 +54,27 @@
   font-size: 14px;
   color: var(--text-primary-3);
   line-height: 1.5;
+  word-break: break-word;
+}
+
+/* ===== MOBILE ===== */
+@media (max-width: 768px) {
+  .bubble {
+    gap: 10px;
+    padding: 6px 14px;
+  }
+
+  .avatar {
+    width: 30px;
+    height: 30px;
+    font-size: 10px;
+  }
+
+  .author {
+    font-size: 13px;
+  }
+
+  .text {
+    font-size: 14px;
+  }
 }
