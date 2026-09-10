@@ -1,21 +1,50 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AppState, Channel, ChannelStatus, avatarColorFor, initialsFrom, formatTimestamp } from './types';
-import { WORKSPACE, MOCK_CHANNELS, MOCK_DMS } from './data/mockData';
+import { WORKSPACE, MOCK_DMS } from './data/mockData';
 import { getChannels, getMessages, sendMessage } from './api/client';
 import WorkspaceSwitcher from './components/WorkspaceSwitcher/WorkspaceSwitcher';
 import Sidebar from './components/Sidebar/Sidebar';
 import ChatPane from './components/ChatPane/ChatPane';
 import styles from './App.module.css';
 
+// ── Token + user handoff from login app ──────────────────
+// Login app redirects here with ?token=xxx&name=xxx&email=xxx
+const LOGIN_URL = 'https://huddle-one-psi.vercel.app'; // ← replace with real login app URL
+
+const params = new URLSearchParams(window.location.search);
+const urlToken = params.get('token');
+const urlName  = params.get('name');
+const urlEmail = params.get('email');
+
+if (urlToken) {
+  localStorage.setItem('huddle_token', urlToken);
+  if (urlName)  localStorage.setItem('huddle_user_name', urlName);
+  if (urlEmail) localStorage.setItem('huddle_user_email', urlEmail);
+  // Remove credentials from URL bar
+  params.delete('token');
+  params.delete('name');
+  params.delete('email');
+  const clean = window.location.pathname + (params.toString() ? `?${params}` : '');
+  window.history.replaceState({}, '', clean);
+}
+
+// If no token at all → send to login
+if (!localStorage.getItem('huddle_token')) {
+  window.location.href = LOGIN_URL;
+}
+
+const storedName  = localStorage.getItem('huddle_user_name') ?? 'You';
+const storedEmail = localStorage.getItem('huddle_user_email') ?? '';
+
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>({
     workspace: WORKSPACE,
-    channels: MOCK_CHANNELS,
+    channels: [],          // start empty — real channels load from API
     directMessages: MOCK_DMS,
-    activeChannelId: MOCK_CHANNELS[0].id,
+    activeChannelId: '',
     channelStatus: 'loaded',
   });
-  const [channelStatus, setChannelStatus] = useState<ChannelStatus>('loaded');
+  const [channelStatus, setChannelStatus] = useState<ChannelStatus>('loading');
   const [mobileView, setMobileView] = useState<'sidebar' | 'chat'>('sidebar');
 
   const allChannels: Channel[] = [...appState.channels, ...appState.directMessages];
@@ -25,7 +54,10 @@ const App: React.FC = () => {
   useEffect(() => {
     getChannels()
       .then(({ channels }) => {
-        if (!channels.length) return;
+        if (!channels.length) {
+          setChannelStatus('empty');
+          return;
+        }
         const mapped: Channel[] = channels.map(c => ({
           id: c.id,
           name: c.name,
@@ -38,13 +70,21 @@ const App: React.FC = () => {
           activeChannelId: mapped[0].id,
         }));
       })
-      .catch(() => {
-        // API not running keep mock data
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : '';
+        if (msg.includes('401') || msg.includes('403')) {
+          // Token expired or invalid — go back to login
+          localStorage.removeItem('huddle_token');
+          window.location.href = LOGIN_URL;
+        } else {
+          setChannelStatus('error');
+        }
       });
   }, []);
 
   // Load messages when active channel changes
   const loadMessages = useCallback(async (channelId: string) => {
+    if (!channelId) return;
     setChannelStatus('loading');
     try {
       const { messages } = await getMessages(channelId);
@@ -64,17 +104,12 @@ const App: React.FC = () => {
       }));
       setChannelStatus(mapped.length === 0 ? 'empty' : 'loaded');
     } catch {
-      // API not available — keep existing mock messages and show as loaded
-      setAppState(prev => {
-        const ch = prev.channels.find(c => c.id === channelId);
-        const hasMock = ch && ch.messages.length > 0;
-        setChannelStatus(hasMock ? 'loaded' : 'empty');
-        return prev;
-      });
+      setChannelStatus('error');
     }
   }, []);
 
   useEffect(() => {
+    if (!appState.activeChannelId) return;
     const isDm = appState.directMessages.some(dm => dm.id === appState.activeChannelId);
     if (!isDm) loadMessages(appState.activeChannelId);
   }, [appState.activeChannelId, loadMessages]);
@@ -85,14 +120,14 @@ const App: React.FC = () => {
     setMobileView('chat');
   };
 
-  // Send message
+  // Send message — uses the logged-in user's name
   const handleSend = async (text: string) => {
     const now = new Date().toISOString();
     const optimistic = {
       id: `local-${Date.now()}`,
-      author: 'You',
-      authorInitials: 'YO',
-      avatarColor: avatarColorFor('you'),
+      author: storedName,
+      authorInitials: initialsFrom(storedName),
+      avatarColor: avatarColorFor(storedEmail || storedName),
       timestamp: formatTimestamp(now),
       content: text,
     };
@@ -135,7 +170,7 @@ const App: React.FC = () => {
     }
   };
 
-  // Retry
+  // Retry loading messages
   const handleRetry = () => {
     loadMessages(appState.activeChannelId);
   };
@@ -152,14 +187,16 @@ const App: React.FC = () => {
           onSelectChannel={handleSelectChannel}
           hidden={mobileView === 'chat'}
         />
-        <ChatPane
-          channel={activeChannel}
-          status={channelStatus}
-          onSend={handleSend}
-          onRetry={handleRetry}
-          onBack={() => setMobileView('sidebar')}
-          hidden={mobileView === 'sidebar'}
-        />
+        {activeChannel && (
+          <ChatPane
+            channel={activeChannel}
+            status={channelStatus}
+            onSend={handleSend}
+            onRetry={handleRetry}
+            onBack={() => setMobileView('sidebar')}
+            hidden={mobileView === 'sidebar'}
+          />
+        )}
       </div>
     </div>
   );
