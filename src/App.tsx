@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AppState, Channel, ChannelStatus, avatarColorFor, initialsFrom, formatTimestamp } from './types';
-import { WORKSPACE, MOCK_DMS } from './data/mockData';
+import { MOCK_DMS } from './data/mockData';
 import { getChannels, getMessages, sendMessage } from './api/client';
 import WorkspaceSwitcher from './components/WorkspaceSwitcher/WorkspaceSwitcher';
 import Sidebar from './components/Sidebar/Sidebar';
@@ -9,7 +9,7 @@ import styles from './App.module.css';
 
 // ── Token + user handoff from login app ──────────────────
 // Login app redirects here with ?token=xxx&name=xxx&email=xxx
-const LOGIN_URL = 'https://huddle-one-psi.vercel.app'; // ← replace with real login app URL
+const LOGIN_URL = 'https://your-login-app.vercel.app'; // ← replace with real login app URL
 
 const params = new URLSearchParams(window.location.search);
 const urlToken = params.get('token');
@@ -33,12 +33,22 @@ if (!localStorage.getItem('huddle_token')) {
   window.location.href = LOGIN_URL;
 }
 
-const storedName  = localStorage.getItem('huddle_user_name') ?? 'You';
+const storedName  = localStorage.getItem('huddle_user_name') ?? '';
 const storedEmail = localStorage.getItem('huddle_user_email') ?? '';
+// Use name → or part before @ in email → or fallback
+const displayName = storedName || storedEmail.split('@')[0] || 'You';
+
+// Build workspace from real logged-in user info instead of mock data
+const userWorkspace: AppState['workspace'] = {
+  id: 'user',
+  name: displayName,
+  initials: initialsFrom(displayName),
+  avatarColor: avatarColorFor(storedEmail || displayName),
+};
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>({
-    workspace: WORKSPACE,
+    workspace: userWorkspace,   // ← real user info, not "Brightly Co"
     channels: [],          // start empty — real channels load from API
     directMessages: MOCK_DMS,
     activeChannelId: '',
