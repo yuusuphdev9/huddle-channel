@@ -1,5 +1,6 @@
 .app {
-  height: 100vh;
+  height: 100vh;        /* fallback for older browsers */
+  height: 100dvh;       /* accounts for mobile browser address bar */
   display: flex;
   flex-direction: column;
   overflow: hidden;

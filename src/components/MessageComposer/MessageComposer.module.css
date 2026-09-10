@@ -5,6 +5,12 @@
   flex-shrink: 0;
 }
 
+@media (max-width: 768px) {
+  .composerWrap {
+    padding: 10px 14px 12px;
+  }
+}
+
 .composerBox {
   display: flex;
   align-items: center;
