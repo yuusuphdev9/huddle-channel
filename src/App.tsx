@@ -54,9 +54,27 @@ if (!localStorage.getItem('huddle_token')) {
 
 const storedName  = localStorage.getItem('huddle_user_name') ?? '';
 const storedEmail = localStorage.getItem('huddle_user_email') ?? '';
-const displayName = storedName || storedEmail.split('@')[0] || 'You';
 
-const DM_STORAGE_KEY = `huddle_dms_${storedEmail || storedName || 'guest'}`;
+// If name/email weren't stored from login redirect, try to decode them from the JWT
+if (!storedName && !storedEmail) {
+  const token = localStorage.getItem('huddle_token') ?? '';
+  if (token) {
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+        if (payload.name)  { localStorage.setItem('huddle_user_name',  payload.name);  }
+        if (payload.email) { localStorage.setItem('huddle_user_email', payload.email); }
+      }
+    } catch { /* ignore decode errors */ }
+  }
+}
+
+const resolvedName  = localStorage.getItem('huddle_user_name') ?? '';
+const resolvedEmail = localStorage.getItem('huddle_user_email') ?? '';
+const displayName = resolvedName || resolvedEmail.split('@')[0] || 'You';
+
+const DM_STORAGE_KEY = `huddle_dms_${resolvedEmail || resolvedName || 'guest'}`;
 const CUSTOM_CHANNELS_KEY = `huddle_custom_channels`;
 
 function loadSavedDms(): Channel[] {
@@ -139,7 +157,7 @@ const userWorkspace: AppState['workspace'] = {
   id: 'user',
   name: displayName,
   initials: initialsFrom(displayName),
-  avatarColor: avatarColorFor(storedEmail || displayName),
+  avatarColor: avatarColorFor(resolvedEmail || displayName),
 };
 
 const mapApiMessage = (m: ApiMessage): Message => {

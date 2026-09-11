@@ -36,9 +36,10 @@ const PlusIcon = () => (
   </svg>
 );
 
-const XIcon = () => (
-  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-    <path d="M1.5 1.5L8.5 8.5M8.5 1.5L1.5 8.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+const TrashIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+    <path d="M2 4h10M5 4V2.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 .5.5V4M3 4l.8 7.2a1 1 0 0 0 1 .8h4.4a1 1 0 0 0 1-.8L11 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M5.5 6.5v3M8.5 6.5v3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
   </svg>
 );
 
@@ -116,7 +117,7 @@ const Sidebar: React.FC<Props> = ({
           <li key={ch.id} className={styles.listItem}>
             <button
               className={`${styles.navItem} ${activeChannelId === ch.id ? styles.active : ""}`}
-              onClick={() => onSelectChannel(ch.id)}
+              onClick={() => { setMenuOpen(false); onSelectChannel(ch.id); }}
             >
               <span className={styles.icon}>
                 {ch.name === 'design' ? <LockIcon /> : <HashIcon />}
@@ -133,7 +134,7 @@ const Sidebar: React.FC<Props> = ({
                 aria-label={`Delete channel ${ch.name}`}
                 onClick={e => { e.stopPropagation(); onDeleteChannel(ch.id); }}
               >
-                <XIcon />
+                <TrashIcon />
               </button>
             )}
           </li>
@@ -177,7 +178,7 @@ const Sidebar: React.FC<Props> = ({
             <li key={dm.id} className={styles.listItem}>
               <button
                 className={`${styles.navItem} ${activeChannelId === dm.id ? styles.active : ''}`}
-                onClick={() => onSelectChannel(dm.id)}
+                onClick={() => { setMenuOpen(false); onSelectChannel(dm.id); }}
               >
                 <span className={styles.dmDot} />
                 <span className={styles.channelName}>{dm.name}</span>
@@ -189,7 +190,7 @@ const Sidebar: React.FC<Props> = ({
                   aria-label={`Delete DM with ${dm.name}`}
                   onClick={e => { e.stopPropagation(); onDeleteDm(dm.id); }}
                 >
-                  <XIcon />
+                  <TrashIcon />
                 </button>
               )}
             </li>
