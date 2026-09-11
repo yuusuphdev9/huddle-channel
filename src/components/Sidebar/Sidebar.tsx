@@ -8,6 +8,8 @@ interface Props {
   directMessages: Channel[];
   activeChannelId: string;
   onSelectChannel: (id: string) => void;
+  onDeleteChannel?: (id: string) => void;
+  onDeleteDm?: (id: string) => void;
   onSignOut?: () => void;
   onOpenNewDm?: () => void;
   onOpenCreateChannel?: () => void;
@@ -34,6 +36,12 @@ const PlusIcon = () => (
   </svg>
 );
 
+const XIcon = () => (
+  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+    <path d="M1.5 1.5L8.5 8.5M8.5 1.5L1.5 8.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+  </svg>
+);
+
 const ChevronDown = ({ open }: { open: boolean }) => (
   <svg
     width="12"
@@ -52,6 +60,8 @@ const Sidebar: React.FC<Props> = ({
   directMessages,
   activeChannelId,
   onSelectChannel,
+  onDeleteChannel,
+  onDeleteDm,
   onSignOut,
   onOpenNewDm,
   onOpenCreateChannel,
@@ -103,7 +113,7 @@ const Sidebar: React.FC<Props> = ({
       </div>
       <ul className={styles.list}>
         {channels.map(ch => (
-          <li key={ch.id}>
+          <li key={ch.id} className={styles.listItem}>
             <button
               className={`${styles.navItem} ${activeChannelId === ch.id ? styles.active : ""}`}
               onClick={() => onSelectChannel(ch.id)}
@@ -116,6 +126,16 @@ const Sidebar: React.FC<Props> = ({
                 <span className={styles.badge}>{ch.unreadCount}</span>
               )}
             </button>
+            {onDeleteChannel && (
+              <button
+                className={styles.deleteBtn}
+                title={`Delete #${ch.name}`}
+                aria-label={`Delete channel ${ch.name}`}
+                onClick={e => { e.stopPropagation(); onDeleteChannel(ch.id); }}
+              >
+                <XIcon />
+              </button>
+            )}
           </li>
         ))}
       </ul>
@@ -154,7 +174,7 @@ const Sidebar: React.FC<Props> = ({
           </li>
         ) : (
           directMessages.map(dm => (
-            <li key={dm.id}>
+            <li key={dm.id} className={styles.listItem}>
               <button
                 className={`${styles.navItem} ${activeChannelId === dm.id ? styles.active : ''}`}
                 onClick={() => onSelectChannel(dm.id)}
@@ -162,6 +182,16 @@ const Sidebar: React.FC<Props> = ({
                 <span className={styles.dmDot} />
                 <span className={styles.channelName}>{dm.name}</span>
               </button>
+              {onDeleteDm && (
+                <button
+                  className={styles.deleteBtn}
+                  title={`Close DM with ${dm.name}`}
+                  aria-label={`Delete DM with ${dm.name}`}
+                  onClick={e => { e.stopPropagation(); onDeleteDm(dm.id); }}
+                >
+                  <XIcon />
+                </button>
+              )}
             </li>
           ))
         )}

@@ -488,6 +488,36 @@ const App: React.FC = () => {
     }
   };
 
+  // Delete a channel
+  const handleDeleteChannel = (id: string) => {
+    setAppState(prev => {
+      const nextChannels = prev.channels.filter(c => c.id !== id);
+      // If the deleted channel was active, switch to first remaining
+      const nextActive = prev.activeChannelId === id
+        ? (nextChannels[0]?.id || prev.directMessages[0]?.id || '')
+        : prev.activeChannelId;
+      return { ...prev, channels: nextChannels, activeChannelId: nextActive };
+    });
+    // Remove from localStorage if it was a custom channel
+    if (id.startsWith('custom-')) {
+      const updated = loadCustomChannels().filter(c => c.id !== id);
+      saveCustomChannels(updated);
+      localStorage.removeItem(`huddle_chan_msgs_${id}`);
+    }
+  };
+
+  // Delete a DM conversation
+  const handleDeleteDm = (id: string) => {
+    setAppState(prev => {
+      const nextDms = prev.directMessages.filter(d => d.id !== id);
+      const nextActive = prev.activeChannelId === id
+        ? (prev.channels[0]?.id || nextDms[0]?.id || '')
+        : prev.activeChannelId;
+      saveDms(nextDms);
+      return { ...prev, directMessages: nextDms, activeChannelId: nextActive };
+    });
+  };
+
   // Retry loading messages
   const handleRetry = () => {
     fetchChannelMessages(appState.activeChannelId, true);
@@ -503,6 +533,8 @@ const App: React.FC = () => {
           directMessages={appState.directMessages}
           activeChannelId={appState.activeChannelId}
           onSelectChannel={handleSelectChannel}
+          onDeleteChannel={handleDeleteChannel}
+          onDeleteDm={handleDeleteDm}
           onSignOut={redirectToLogin}
           onOpenNewDm={() => setIsNewDmOpen(true)}
           onOpenCreateChannel={() => setIsCreateChannelOpen(true)}
