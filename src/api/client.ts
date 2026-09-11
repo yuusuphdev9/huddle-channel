@@ -92,6 +92,19 @@ export async function getChannels(): Promise<ChannelsResponse> {
   return handleResponse<ChannelsResponse>(res);
 }
 
+export async function createChannel(name: string): Promise<ApiChannel> {
+  const res = await fetch(`${BASE_URL}/channels`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ name }),
+  });
+  const data = await handleResponse<{ channel?: ApiChannel } | ApiChannel>(res);
+  if (data && typeof data === 'object' && 'channel' in data && data.channel) {
+    return data.channel;
+  }
+  return data as ApiChannel;
+}
+
 // ─── Messages ────────────────────────────────────────
 
 export interface ApiAuthor {

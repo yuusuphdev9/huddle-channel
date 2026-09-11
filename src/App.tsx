@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AppState, Channel, ChannelStatus, Message, Member, avatarColorFor, initialsFrom, formatTimestamp } from './types';
-import { getChannels, getMessages, sendMessage, ApiMessage } from './api/client';
+import { getChannels, getMessages, sendMessage, createChannel, ApiMessage } from './api/client';
 import WorkspaceSwitcher from './components/WorkspaceSwitcher/WorkspaceSwitcher';
 import Sidebar from './components/Sidebar/Sidebar';
 import ChatPane from './components/ChatPane/ChatPane';
 import NewDmModal from './components/NewDmModal/NewDmModal';
+import CreateChannelModal from './components/CreateChannelModal/CreateChannelModal';
 import styles from './App.module.css';
 
 // ── Token + user handoff from login app ──────────────────
@@ -56,6 +57,7 @@ const storedEmail = localStorage.getItem('huddle_user_email') ?? '';
 const displayName = storedName || storedEmail.split('@')[0] || 'You';
 
 const DM_STORAGE_KEY = `huddle_dms_${storedEmail || storedName || 'guest'}`;
+const CUSTOM_CHANNELS_KEY = `huddle_custom_channels`;
 
 function loadSavedDms(): Channel[] {
   try {
@@ -70,6 +72,38 @@ function loadSavedDms(): Channel[] {
 function saveDms(dms: Channel[]) {
   try {
     localStorage.setItem(DM_STORAGE_KEY, JSON.stringify(dms));
+  } catch { /* ignore */ }
+}
+
+function loadCustomChannels(): Channel[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_CHANNELS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+  } catch { /* ignore */ }
+  return [];
+}
+
+function saveCustomChannels(channels: Channel[]) {
+  try {
+    localStorage.setItem(CUSTOM_CHANNELS_KEY, JSON.stringify(channels));
+  } catch { /* ignore */ }
+}
+
+function loadLocalChannelMessages(channelId: string): Message[] {
+  try {
+    const raw = localStorage.getItem(`huddle_chan_msgs_${channelId}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+  } catch { /* ignore */ }
+  return [];
+}
+
+function saveLocalChannelMessages(channelId: string, msgs: Message[]) {
+  try {
+    localStorage.setItem(`huddle_chan_msgs_${channelId}`, JSON.stringify(msgs));
   } catch { /* ignore */ }
 }
 
@@ -125,7 +159,7 @@ const mapApiMessage = (m: ApiMessage): Message => {
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>({
     workspace: userWorkspace,
-    channels: [],
+    channels: loadCustomChannels(),
     directMessages: loadSavedDms(),
     activeChannelId: '',
     channelStatus: 'loading',
@@ -134,6 +168,7 @@ const App: React.FC = () => {
   const [mobileView, setMobileView] = useState<'sidebar' | 'chat'>('sidebar');
   const [knownMembers, setKnownMembers] = useState<Member[]>(loadSavedMembers);
   const [isNewDmOpen, setIsNewDmOpen] = useState<boolean>(false);
+  const [isCreateChannelOpen, setIsCreateChannelOpen] = useState<boolean>(false);
 
   const allChannels: Channel[] = [...appState.channels, ...appState.directMessages];
   const activeChannel = allChannels.find(c => c.id === appState.activeChannelId) ?? allChannels[0];
@@ -173,24 +208,26 @@ const App: React.FC = () => {
   useEffect(() => {
     getChannels()
       .then(({ channels }) => {
-        if (!channels || !channels.length) {
-          setChannelStatus('empty');
-          return;
-        }
-        const mapped: Channel[] = channels.map(c => ({
+        const apiChannels: Channel[] = (channels || []).map(c => ({
           id: c.id,
           name: c.name,
           type: 'channel' as const,
           messages: [],
         }));
+
+        // Merge backend channels with any custom-created channels
+        const custom = loadCustomChannels();
+        const existingIds = new Set(apiChannels.map(c => c.id));
+        const merged = [...apiChannels, ...custom.filter(c => !existingIds.has(c.id))];
+
         setAppState(prev => ({
           ...prev,
-          channels: mapped,
-          activeChannelId: prev.activeChannelId || mapped[0].id,
+          channels: merged,
+          activeChannelId: prev.activeChannelId || (merged[0] ? merged[0].id : ''),
         }));
 
-        // Discover members across all channels
-        channels.forEach(ch => {
+        // Discover members across channels
+        apiChannels.forEach(ch => {
           getMessages(ch.id)
             .then(res => {
               if (res && res.messages) {
@@ -205,7 +242,18 @@ const App: React.FC = () => {
         if (msg.includes('401') || msg.includes('403')) {
           redirectToLogin();
         } else {
-          setChannelStatus('error');
+          // If offline or API fails, still keep custom channels
+          const custom = loadCustomChannels();
+          if (custom.length > 0) {
+            setAppState(prev => ({
+              ...prev,
+              channels: custom,
+              activeChannelId: prev.activeChannelId || custom[0].id,
+            }));
+            setChannelStatus('loaded');
+          } else {
+            setChannelStatus('error');
+          }
         }
       });
   }, [updateKnownMembers]);
@@ -213,6 +261,20 @@ const App: React.FC = () => {
   // Fetch messages for a channel
   const fetchChannelMessages = useCallback(async (channelId: string, isInitial: boolean = false) => {
     if (!channelId) return;
+
+    // Check if this is a custom local channel
+    if (channelId.startsWith('custom-')) {
+      const localMsgs = loadLocalChannelMessages(channelId);
+      setAppState(prev => ({
+        ...prev,
+        channels: prev.channels.map(ch =>
+          ch.id === channelId ? { ...ch, messages: localMsgs } : ch
+        ),
+      }));
+      setChannelStatus(localMsgs.length === 0 ? 'empty' : 'loaded');
+      return;
+    }
+
     if (isInitial) {
       setChannelStatus('loading');
     }
@@ -252,17 +314,66 @@ const App: React.FC = () => {
     // Initial load for channel
     fetchChannelMessages(appState.activeChannelId, true);
 
-    // Auto-poll every 3 seconds for real-time updates between multiple users
-    const pollInterval = setInterval(() => {
-      fetchChannelMessages(appState.activeChannelId, false);
-    }, 3000);
+    // Auto-poll every 3 seconds for real-time updates between multiple users (skip for custom local)
+    if (!appState.activeChannelId.startsWith('custom-')) {
+      const pollInterval = setInterval(() => {
+        fetchChannelMessages(appState.activeChannelId, false);
+      }, 3000);
 
-    return () => clearInterval(pollInterval);
+      return () => clearInterval(pollInterval);
+    }
   }, [appState.activeChannelId, appState.directMessages, fetchChannelMessages]);
 
   // Select channel or DM
   const handleSelectChannel = (id: string) => {
     setAppState(prev => ({ ...prev, activeChannelId: id }));
+    setMobileView('chat');
+  };
+
+  // Create a new channel
+  const handleCreateChannel = async (name: string, _isPrivate?: boolean) => {
+    const cleanName = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '');
+    if (!cleanName) return;
+
+    try {
+      // Attempt backend creation
+      const apiChannel = await createChannel(cleanName);
+      if (apiChannel && apiChannel.id) {
+        const newChan: Channel = {
+          id: apiChannel.id,
+          name: apiChannel.name || cleanName,
+          type: 'channel',
+          messages: [],
+        };
+        setAppState(prev => ({
+          ...prev,
+          channels: [...prev.channels, newChan],
+          activeChannelId: newChan.id,
+        }));
+        setChannelStatus('empty');
+        setMobileView('chat');
+        return;
+      }
+    } catch {
+      // Backend create endpoint not available yet -> create and persist locally
+    }
+
+    const localId = `custom-${Date.now()}`;
+    const newChan: Channel = {
+      id: localId,
+      name: cleanName,
+      type: 'channel',
+      messages: [],
+    };
+    const nextCustom = [...loadCustomChannels(), newChan];
+    saveCustomChannels(nextCustom);
+
+    setAppState(prev => ({
+      ...prev,
+      channels: [...prev.channels, newChan],
+      activeChannelId: localId,
+    }));
+    setChannelStatus('empty');
     setMobileView('chat');
   };
 
@@ -294,7 +405,7 @@ const App: React.FC = () => {
     setMobileView('chat');
   };
 
-  // Send message — handles both channels and direct messages
+  // Send message — handles channels, custom channels, and direct messages
   const handleSend = async (text: string) => {
     if (!text.trim() || !appState.activeChannelId) return;
 
@@ -324,7 +435,23 @@ const App: React.FC = () => {
       return;
     }
 
-    // Channel message: optimistic addition
+    // Custom local channel message
+    if (appState.activeChannelId.startsWith('custom-')) {
+      setAppState(prev => {
+        const nextChannels = prev.channels.map(ch =>
+          ch.id === prev.activeChannelId
+            ? { ...ch, messages: [...ch.messages, optimistic] }
+            : ch
+        );
+        const currentMsgs = prev.channels.find(c => c.id === prev.activeChannelId)?.messages || [];
+        saveLocalChannelMessages(prev.activeChannelId, [...currentMsgs, optimistic]);
+        return { ...prev, channels: nextChannels };
+      });
+      setChannelStatus('loaded');
+      return;
+    }
+
+    // Backend Channel message: optimistic addition
     setAppState(prev => ({
       ...prev,
       channels: prev.channels.map(ch =>
@@ -378,6 +505,7 @@ const App: React.FC = () => {
           onSelectChannel={handleSelectChannel}
           onSignOut={redirectToLogin}
           onOpenNewDm={() => setIsNewDmOpen(true)}
+          onOpenCreateChannel={() => setIsCreateChannelOpen(true)}
           hidden={mobileView === 'chat'}
         />
         {activeChannel && (
@@ -403,8 +531,15 @@ const App: React.FC = () => {
         currentUserEmail={storedEmail}
         onSelectUser={handleStartDm}
       />
+
+      <CreateChannelModal
+        isOpen={isCreateChannelOpen}
+        onClose={() => setIsCreateChannelOpen(false)}
+        onCreateChannel={handleCreateChannel}
+      />
     </div>
   );
 };
 
 export default App;
+

@@ -10,6 +10,7 @@ interface Props {
   onSelectChannel: (id: string) => void;
   onSignOut?: () => void;
   onOpenNewDm?: () => void;
+  onOpenCreateChannel?: () => void;
   hidden?: boolean;
 }
 
@@ -53,6 +54,7 @@ const Sidebar: React.FC<Props> = ({
   onSelectChannel,
   onSignOut,
   onOpenNewDm,
+  onOpenCreateChannel,
   hidden,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -85,7 +87,20 @@ const Sidebar: React.FC<Props> = ({
       )}
 
       {/* Channels */}
-      <div className={styles.groupLabel}>Channels</div>
+      <div className={styles.groupHeader}>
+        <div className={styles.groupLabel}>Channels</div>
+        {onOpenCreateChannel && (
+          <button
+            type="button"
+            className={styles.addDmBtn}
+            onClick={onOpenCreateChannel}
+            title="Create a new channel"
+            aria-label="Create channel"
+          >
+            <PlusIcon />
+          </button>
+        )}
+      </div>
       <ul className={styles.list}>
         {channels.map(ch => (
           <li key={ch.id}>
