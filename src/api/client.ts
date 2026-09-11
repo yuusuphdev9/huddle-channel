@@ -94,17 +94,29 @@ export async function getChannels(): Promise<ChannelsResponse> {
 
 // ─── Messages ────────────────────────────────────────
 
+export interface ApiAuthor {
+  id: string;
+  name?: string;
+  email?: string;
+}
+
 export interface ApiMessage {
   id: string;
   content: string;
-  userId: string;
-  userName: string;
-  channelId: string;
   createdAt: string;
+  author?: ApiAuthor;
+  userId?: string;
+  userName?: string;
+  channelId?: string;
 }
 
 export interface MessagesResponse {
+  channel?: ApiChannel;
   messages: ApiMessage[];
+}
+
+export interface SendMessageResponse {
+  message: ApiMessage;
 }
 
 export async function getMessages(channelId: string): Promise<MessagesResponse> {
@@ -123,5 +135,9 @@ export async function sendMessage(
     headers: authHeaders(),
     body: JSON.stringify({ content }),
   });
-  return handleResponse<ApiMessage>(res);
+  const data = await handleResponse<SendMessageResponse | ApiMessage>(res);
+  if (data && typeof data === 'object' && 'message' in data && (data as SendMessageResponse).message) {
+    return (data as SendMessageResponse).message;
+  }
+  return data as ApiMessage;
 }
