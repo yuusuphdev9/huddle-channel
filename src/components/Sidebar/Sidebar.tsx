@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Channel, Workspace } from '../../types';
 import styles from './Sidebar.module.css';
 
@@ -69,6 +69,19 @@ const Sidebar: React.FC<Props> = ({
   hidden,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking anywhere outside it
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [menuOpen]);
 
   return (
     <aside className={`${styles.sidebar}${hidden ? ` ${styles.hidden}` : ''}`}>
@@ -80,7 +93,7 @@ const Sidebar: React.FC<Props> = ({
 
       {/* Workspace dropdown menu */}
       {menuOpen && (
-        <div className={styles.wsMenu}>
+        <div className={styles.wsMenu} ref={menuRef}>
           <button className={styles.wsMenuItem} onClick={() => setMenuOpen(false)}>
             Settings &amp; administration
           </button>
