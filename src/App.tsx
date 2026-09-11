@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AppState, Channel, ChannelStatus, Message, avatarColorFor, initialsFrom, formatTimestamp } from './types';
+import { AppState, Channel, ChannelStatus, Message, Member, avatarColorFor, initialsFrom, formatTimestamp } from './types';
 import { getChannels, getMessages, sendMessage, ApiMessage } from './api/client';
 import WorkspaceSwitcher from './components/WorkspaceSwitcher/WorkspaceSwitcher';
 import Sidebar from './components/Sidebar/Sidebar';
 import ChatPane from './components/ChatPane/ChatPane';
+import NewDmModal from './components/NewDmModal/NewDmModal';
 import styles from './App.module.css';
 
 // ── Token + user handoff from login app ──────────────────
@@ -72,6 +73,33 @@ function saveDms(dms: Channel[]) {
   } catch { /* ignore */ }
 }
 
+// Initial directory of signed up users
+const DEFAULT_KNOWN_MEMBERS: Member[] = [
+  { id: 'u1', name: 'maya chen', email: 'adejumoyusluv@gmail.com' },
+  { id: 'u2', name: 'Yusuf', email: 'adejumo@gmail.com' },
+  { id: 'u3', name: 'Kessiena', email: 'kessakpobire@gmail.com' },
+  { id: 'u4', name: 'OREOLUWA Onietan', email: 'oreoluwaonietan@gmail.com' },
+  { id: 'u5', name: 'Ray', email: 'dreamxi27@gmail.com' },
+  { id: 'u6', name: 'Mayowa', email: 'yusufadejumo09@gmail.com' },
+  { id: 'u7', name: 'Ada Lovelace', email: 'ada@example.com' },
+  { id: 'u8', name: 'Ade Tiger', email: 'ade@example.com' },
+];
+
+function loadSavedMembers(): Member[] {
+  try {
+    const raw = localStorage.getItem('huddle_known_members');
+    if (!raw) return DEFAULT_KNOWN_MEMBERS;
+    const parsed: Member[] = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const map = new Map<string, Member>();
+      DEFAULT_KNOWN_MEMBERS.forEach(m => map.set((m.email || m.name).toLowerCase(), m));
+      parsed.forEach(m => map.set((m.email || m.name).toLowerCase(), m));
+      return Array.from(map.values());
+    }
+  } catch { /* ignore */ }
+  return DEFAULT_KNOWN_MEMBERS;
+}
+
 // Build workspace from real user info instead of mock data
 const userWorkspace: AppState['workspace'] = {
   id: 'user',
@@ -98,15 +126,48 @@ const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>({
     workspace: userWorkspace,
     channels: [],
-    directMessages: loadSavedDms(), // real saved DMs, no mock Jordan Tate
+    directMessages: loadSavedDms(),
     activeChannelId: '',
     channelStatus: 'loading',
   });
   const [channelStatus, setChannelStatus] = useState<ChannelStatus>('loading');
   const [mobileView, setMobileView] = useState<'sidebar' | 'chat'>('sidebar');
+  const [knownMembers, setKnownMembers] = useState<Member[]>(loadSavedMembers);
+  const [isNewDmOpen, setIsNewDmOpen] = useState<boolean>(false);
 
   const allChannels: Channel[] = [...appState.channels, ...appState.directMessages];
   const activeChannel = allChannels.find(c => c.id === appState.activeChannelId) ?? allChannels[0];
+
+  const updateKnownMembers = useCallback((newMessages: ApiMessage[]) => {
+    setKnownMembers(prev => {
+      const map = new Map<string, Member>();
+      prev.forEach(m => map.set((m.email || m.name).toLowerCase(), m));
+      let changed = false;
+      newMessages.forEach(m => {
+        const name = m.author?.name || m.userName;
+        const email = m.author?.email;
+        if (name) {
+          const key = (email || name).toLowerCase();
+          if (!map.has(key)) {
+            map.set(key, {
+              id: m.author?.id || m.userId || key,
+              name,
+              email,
+            });
+            changed = true;
+          }
+        }
+      });
+      if (changed) {
+        const updated = Array.from(map.values());
+        try {
+          localStorage.setItem('huddle_known_members', JSON.stringify(updated));
+        } catch { /* ignore */ }
+        return updated;
+      }
+      return prev;
+    });
+  }, []);
 
   // Load channels from API on mount
   useEffect(() => {
@@ -127,6 +188,17 @@ const App: React.FC = () => {
           channels: mapped,
           activeChannelId: prev.activeChannelId || mapped[0].id,
         }));
+
+        // Discover members across all channels
+        channels.forEach(ch => {
+          getMessages(ch.id)
+            .then(res => {
+              if (res && res.messages) {
+                updateKnownMembers(res.messages);
+              }
+            })
+            .catch(() => {});
+        });
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : '';
@@ -136,7 +208,7 @@ const App: React.FC = () => {
           setChannelStatus('error');
         }
       });
-  }, []);
+  }, [updateKnownMembers]);
 
   // Fetch messages for a channel
   const fetchChannelMessages = useCallback(async (channelId: string, isInitial: boolean = false) => {
@@ -146,7 +218,8 @@ const App: React.FC = () => {
     }
     try {
       const { messages } = await getMessages(channelId);
-      const mapped = (messages || []).map(mapApiMessage);
+      const rawMessages = messages || [];
+      const mapped = rawMessages.map(mapApiMessage);
       setAppState(prev => ({
         ...prev,
         channels: prev.channels.map(ch =>
@@ -154,6 +227,7 @@ const App: React.FC = () => {
         ),
       }));
       setChannelStatus(mapped.length === 0 ? 'empty' : 'loaded');
+      updateKnownMembers(rawMessages);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '';
       if (msg.includes('401') || msg.includes('403')) {
@@ -162,7 +236,7 @@ const App: React.FC = () => {
         setChannelStatus('error');
       }
     }
-  }, []);
+  }, [updateKnownMembers]);
 
   // Handle active channel change and auto-polling
   useEffect(() => {
@@ -193,9 +267,10 @@ const App: React.FC = () => {
   };
 
   // Start a direct message with another user
-  const handleStartDm = (authorName: string, authorId?: string) => {
-    if (!authorName || authorName.toLowerCase() === displayName.toLowerCase()) return;
-    const dmId = `dm-${authorId || authorName.toLowerCase().replace(/\s+/g, '-')}`;
+  const handleStartDm = (authorName: string, authorId?: string, authorEmail?: string) => {
+    if (!authorName) return;
+    const cleanId = (authorId || authorEmail || authorName).toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const dmId = `dm-${cleanId}`;
 
     setAppState(prev => {
       const existing = prev.directMessages.find(d => d.id === dmId);
@@ -274,6 +349,9 @@ const App: React.FC = () => {
             : ch
         ),
       }));
+      if (saved) {
+        updateKnownMembers([saved]);
+      }
     } catch (err: unknown) {
       console.error('Failed to send message:', err);
       const msg = err instanceof Error ? err.message : '';
@@ -299,6 +377,7 @@ const App: React.FC = () => {
           activeChannelId={appState.activeChannelId}
           onSelectChannel={handleSelectChannel}
           onSignOut={redirectToLogin}
+          onOpenNewDm={() => setIsNewDmOpen(true)}
           hidden={mobileView === 'chat'}
         />
         {activeChannel && (
@@ -311,9 +390,19 @@ const App: React.FC = () => {
             hidden={mobileView === 'sidebar'}
             currentUserName={displayName}
             onStartDm={handleStartDm}
+            onOpenNewDm={() => setIsNewDmOpen(true)}
           />
         )}
       </div>
+
+      <NewDmModal
+        isOpen={isNewDmOpen}
+        onClose={() => setIsNewDmOpen(false)}
+        members={knownMembers}
+        currentUserName={displayName}
+        currentUserEmail={storedEmail}
+        onSelectUser={handleStartDm}
+      />
     </div>
   );
 };

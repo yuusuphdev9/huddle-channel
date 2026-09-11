@@ -19,6 +19,13 @@ export interface Channel {
   unreadCount?: number;
 }
 
+export interface Member {
+  id: string;
+  name: string;
+  email?: string;
+  avatarColor?: string;
+}
+
 export interface Workspace {
   id: string;
   name: string;
