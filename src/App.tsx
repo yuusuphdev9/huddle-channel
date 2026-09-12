@@ -226,26 +226,50 @@ const App: React.FC = () => {
   useEffect(() => {
     getChannels()
       .then(({ channels }) => {
-        const apiChannels: Channel[] = (channels || []).map(c => ({
-          id: c.id,
-          name: c.name,
-          type: 'channel' as const,
-          messages: [],
-        }));
+        // Split: dm-* prefixed channels from backend go into directMessages
+        const backendDmChannels: Channel[] = [];
+        const regularApiChannels: Channel[] = [];
 
-        // Merge backend channels with any custom-created channels
+        (channels || []).forEach(c => {
+          if (c.name.startsWith('dm-')) {
+            // Derive display name: remove the dm- prefix and the current user's slug,
+            // leaving just the other person's name slug
+            const mySlug = displayName.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+            const parts = c.name.slice(3).split('-').filter(Boolean);
+            const otherSlug = parts.filter(p => p !== mySlug).join(' ') || c.name;
+            backendDmChannels.push({
+              id: c.id,
+              name: otherSlug,
+              type: 'dm',
+              messages: [],
+            });
+          } else {
+            regularApiChannels.push({ id: c.id, name: c.name, type: 'channel', messages: [] });
+          }
+        });
+
+        // Merge regular backend channels with custom-created local channels
         const custom = loadCustomChannels();
-        const existingIds = new Set(apiChannels.map(c => c.id));
-        const merged = [...apiChannels, ...custom.filter(c => !existingIds.has(c.id))];
+        const existingIds = new Set(regularApiChannels.map(c => c.id));
+        const merged = [...regularApiChannels, ...custom.filter(c => !existingIds.has(c.id))];
+
+        // Merge backend DM channels with localStorage DMs (avoid duplicates by backend channel id)
+        const savedDms = loadSavedDms();
+        const backendDmIds = new Set(backendDmChannels.map(d => d.id));
+        const mergedDms = [
+          ...backendDmChannels,
+          ...savedDms.filter(d => !backendDmIds.has(d.id)),
+        ];
 
         setAppState(prev => ({
           ...prev,
           channels: merged,
+          directMessages: mergedDms,
           activeChannelId: prev.activeChannelId || (merged[0] ? merged[0].id : ''),
         }));
 
-        // Discover members across channels
-        apiChannels.forEach(ch => {
+        // Discover members across regular channels
+        regularApiChannels.forEach(ch => {
           getMessages(ch.id)
             .then(res => {
               if (res && res.messages) {
@@ -300,12 +324,25 @@ const App: React.FC = () => {
       const { messages } = await getMessages(channelId);
       const rawMessages = messages || [];
       const mapped = rawMessages.map(mapApiMessage);
-      setAppState(prev => ({
-        ...prev,
-        channels: prev.channels.map(ch =>
-          ch.id === channelId ? { ...ch, messages: mapped } : ch
-        ),
-      }));
+
+      setAppState(prev => {
+        // Check if this channelId belongs to directMessages (backend DM channel)
+        const isDmChannel = prev.directMessages.some(d => d.id === channelId);
+        if (isDmChannel) {
+          return {
+            ...prev,
+            directMessages: prev.directMessages.map(dm =>
+              dm.id === channelId ? { ...dm, messages: mapped } : dm
+            ),
+          };
+        }
+        return {
+          ...prev,
+          channels: prev.channels.map(ch =>
+            ch.id === channelId ? { ...ch, messages: mapped } : ch
+          ),
+        };
+      });
       setChannelStatus(mapped.length === 0 ? 'empty' : 'loaded');
       updateKnownMembers(rawMessages);
     } catch (err: unknown) {
@@ -322,25 +359,28 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!appState.activeChannelId) return;
 
-    const isDm = appState.directMessages.some(dm => dm.id === appState.activeChannelId);
-    if (isDm) {
-      const dm = appState.directMessages.find(d => d.id === appState.activeChannelId);
-      setChannelStatus(dm && dm.messages.length > 0 ? 'loaded' : 'empty');
+    const activeId = appState.activeChannelId;
+    const localDm = appState.directMessages.find(d => d.id === activeId && activeId.startsWith('dm-'));
+
+    if (localDm) {
+      // Local-only DM: no API, just show stored messages
+      setChannelStatus(localDm.messages.length > 0 ? 'loaded' : 'empty');
       return;
     }
 
-    // Initial load for channel
-    fetchChannelMessages(appState.activeChannelId, true);
-
-    // Auto-poll every 3 seconds for real-time updates between multiple users (skip for custom local)
-    if (!appState.activeChannelId.startsWith('custom-')) {
+    // For backend channels AND backend DM channels: fetch + poll
+    if (!activeId.startsWith('custom-')) {
+      fetchChannelMessages(activeId, true);
       const pollInterval = setInterval(() => {
-        fetchChannelMessages(appState.activeChannelId, false);
+        fetchChannelMessages(activeId, false);
       }, 3000);
-
       return () => clearInterval(pollInterval);
     }
-  }, [appState.activeChannelId, appState.directMessages, fetchChannelMessages]);
+
+    // Custom local channel: load from localStorage, no polling
+    fetchChannelMessages(activeId, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appState.activeChannelId]);
 
   // Select channel or DM
   const handleSelectChannel = (id: string) => {
@@ -396,29 +436,64 @@ const App: React.FC = () => {
   };
 
   // Start a direct message with another user
-  const handleStartDm = (authorName: string, authorId?: string, authorEmail?: string) => {
+  const handleStartDm = async (authorName: string, _authorId?: string, authorEmail?: string) => {
     if (!authorName) return;
-    const cleanId = (authorId || authorEmail || authorName).toLowerCase().replace(/[^a-z0-9]/g, '-');
+
+    const normalizedRecipient = authorName.trim().toLowerCase();
+
+    // Check for an existing DM with this person (by name, case-insensitive) — prevents duplicates
+    const existingDm = appState.directMessages.find(
+      d => d.name.trim().toLowerCase() === normalizedRecipient
+    );
+    if (existingDm) {
+      setAppState(prev => ({ ...prev, activeChannelId: existingDm.id }));
+      setMobileView('chat');
+      return;
+    }
+
+    // Build a predictable, sorted DM channel name so both users share the same backend channel
+    // e.g. DM between "Yusuf" and "Maya" → "dm-maya-yusuf" (alphabetical)
+    const mySlug        = displayName.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    const recipientSlug = authorName.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    const [a, b]        = [mySlug, recipientSlug].sort();
+    const dmChannelName = `dm-${a}-${b}`;
+
+    // Try to create/use a real backend channel so both users can send and receive
+    try {
+      const apiChannel = await createChannel(dmChannelName);
+      if (apiChannel && apiChannel.id) {
+        const dmChan: Channel = {
+          id: apiChannel.id,
+          name: authorName,          // display the recipient's real name, not the slug
+          type: 'dm',
+          messages: [],
+        };
+        setAppState(prev => {
+          // Guard: might have been created while we awaited
+          const alreadyExists = prev.directMessages.find(d => d.id === apiChannel.id);
+          if (alreadyExists) return { ...prev, activeChannelId: apiChannel.id };
+          const nextDms = [...prev.directMessages, dmChan];
+          saveDms(nextDms);
+          return { ...prev, directMessages: nextDms, activeChannelId: apiChannel.id };
+        });
+        setMobileView('chat');
+        return;
+      }
+    } catch { /* backend channel creation not available — fall back to local DM */ }
+
+    // Fallback: local-only DM (only visible to the sender)
+    const cleanId = (authorEmail || normalizedRecipient).replace(/[^a-z0-9]/g, '-');
     const dmId = `dm-${cleanId}`;
 
     setAppState(prev => {
-      const existing = prev.directMessages.find(d => d.id === dmId);
-      if (existing) {
-        return { ...prev, activeChannelId: dmId };
-      }
-      const newDm: Channel = {
-        id: dmId,
-        name: authorName,
-        type: 'dm',
-        messages: [],
-      };
+      // Double-check by ID too
+      const alreadyById = prev.directMessages.find(d => d.id === dmId);
+      if (alreadyById) return { ...prev, activeChannelId: dmId };
+
+      const newDm: Channel = { id: dmId, name: authorName, type: 'dm', messages: [] };
       const nextDms = [...prev.directMessages, newDm];
       saveDms(nextDms);
-      return {
-        ...prev,
-        directMessages: nextDms,
-        activeChannelId: dmId,
-      };
+      return { ...prev, directMessages: nextDms, activeChannelId: dmId };
     });
     setMobileView('chat');
   };
@@ -427,7 +502,6 @@ const App: React.FC = () => {
   const handleSend = async (text: string) => {
     if (!text.trim() || !appState.activeChannelId) return;
 
-    const isDm = appState.directMessages.some(dm => dm.id === appState.activeChannelId);
     const now = new Date().toISOString();
     const optimisticId = `local-${Date.now()}`;
     const optimistic: Message = {
@@ -439,17 +513,47 @@ const App: React.FC = () => {
       content: text,
     };
 
-    if (isDm) {
+    const activeId = appState.activeChannelId;
+    const isLocalOnlyDm = appState.directMessages.some(dm => dm.id === activeId && activeId.startsWith('dm-'));
+    const isBackendDm   = appState.directMessages.some(dm => dm.id === activeId && !activeId.startsWith('dm-'));
+
+    if (isLocalOnlyDm) {
+      // Local-only DM — store in localStorage only
       setAppState(prev => {
         const nextDms = prev.directMessages.map(dm =>
-          dm.id === prev.activeChannelId
-            ? { ...dm, messages: [...dm.messages, optimistic] }
-            : dm
+          dm.id === activeId ? { ...dm, messages: [...dm.messages, optimistic] } : dm
         );
         saveDms(nextDms);
         return { ...prev, directMessages: nextDms };
       });
       setChannelStatus('loaded');
+      return;
+    }
+
+    if (isBackendDm) {
+      // Backend DM channel — send via API so the other user receives it
+      setAppState(prev => ({
+        ...prev,
+        directMessages: prev.directMessages.map(dm =>
+          dm.id === activeId ? { ...dm, messages: [...dm.messages, optimistic] } : dm
+        ),
+      }));
+      setChannelStatus('loaded');
+      try {
+        const saved = await sendMessage(activeId, text);
+        const real = mapApiMessage(saved);
+        setAppState(prev => ({
+          ...prev,
+          directMessages: prev.directMessages.map(dm =>
+            dm.id === activeId
+              ? { ...dm, messages: dm.messages.map(m => (m.id === optimisticId ? real : m)) }
+              : dm
+          ),
+        }));
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : '';
+        if (msg.includes('401') || msg.includes('403')) redirectToLogin();
+      }
       return;
     }
 
